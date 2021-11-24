@@ -1,6 +1,8 @@
 {
-  "container": "spring-launcher",
+  "image": "spring-launcher",
   "network": "test",
   "channelBuf": 100,
-  "readerBuf": 30
+  "readerBuf": 30,
+  "postgresDB": "lesson",
+  "postgresLogin": "lesson"
 }

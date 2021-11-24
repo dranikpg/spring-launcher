@@ -16,7 +16,7 @@ function App() {
   });
   React.useEffect(async () => {
     try {
-        let res = await fetch("/user")
+        let res = await fetch("/api/user")
         if (res.ok) setState({...state, authenticated: true})
     } catch (e) {}
   }, []);

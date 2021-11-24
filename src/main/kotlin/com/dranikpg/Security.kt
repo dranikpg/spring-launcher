@@ -22,17 +22,19 @@ fun Application.configureSecurity() {
         }
     }
     routing {
-        post("/login") {
+        post("/api/login") {
             @Serializable
             data class Credentials(val password: String)
             val credentials = call.receive<Credentials>()
             if (credentials.password == adminPassword) {
                 call.sessions.set(UserSession(admin = true))
+                call.respond(Unit)
+            } else {
+                call.respond(HttpStatusCode.BadRequest, Unit)
             }
-			call.respond(Unit)
         }
         authenticate ("admin") {
-            get("/user") { call.respond(Unit) }
+            get("/api/user") { call.respond(Unit) }
         }
     }
 }

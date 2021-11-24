@@ -19,7 +19,8 @@ const val LOG_NEEDLE = "database system is ready to accept connections"
 data class RepoData(val repo: String, val folder: String, val branch: String)
 
 @Serializable
-data class LaunchConfig(val image: String, val network: String, val channelBuf: Int, val readerBuf: Int)
+data class LaunchConfig(val image: String, val network: String, val channelBuf: Int, val readerBuf: Int,
+    val postgresDB: String, val postgresLogin: String)
 
 suspend inline fun echoStream(stream: InputStream, channel: Channel<String>, bufSize: Int) {
     val reader = BufferedReader(InputStreamReader(stream), bufSize)
@@ -46,7 +47,9 @@ fun parseRepoUrl(url: String) : RepoData? {
 // Launcher instance
 class Launcher private constructor () {
     companion object {
-        var CONFIG = LaunchConfig("spring-launcher", "lesson", 10, 50)
+        var CONFIG = LaunchConfig("spring-launcher", "lesson",
+            10, 50,
+            "lesson", "lesson")
         val BUSY = AtomicBoolean(false)
         fun createwCAS() : Launcher? {
             if (BUSY.compareAndSet(false, true)) {
@@ -63,9 +66,9 @@ class Launcher private constructor () {
 
     suspend fun startBD() {
         val process = ProcessBuilder("docker", "run",
-                "--env", "POSTGRES_USER=lesson",
-                "--env", "POSTGRES_PASSWORD=lesson",
-                "--env", "POSTGRES_DB=lesson",
+                "--env", "POSTGRES_USER=${CONFIG.postgresLogin}",
+                "--env", "POSTGRES_PASSWORD=${CONFIG.postgresLogin}",
+                "--env", "POSTGRES_DB=${CONFIG.postgresDB}",
                 "--name", "db",
                 "--net", CONFIG.network,
                 "library/postgres")

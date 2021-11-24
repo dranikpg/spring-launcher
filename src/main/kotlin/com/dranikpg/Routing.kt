@@ -11,8 +11,12 @@ import io.ktor.request.*
 
 fun Application.configureRouting() {
     routing {
+        static {
+            files("client/build/")
+            default("client/build/index.html")
+        }
         authenticate("admin") {
-            get("/status") {
+            get("/api/status") {
                 if (Launcher.BUSY.get()) call.respond("busy")
                 else call.respond("ready")
             }

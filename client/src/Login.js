@@ -9,7 +9,7 @@ function Login({authcb}) {
     const tryAuth = async () => {
         setState({busy: true})
         try {
-            let res = await fetch("/login", {
+            let res = await fetch("/api/login", {
                 method: 'POST',
                 body: JSON.stringify({password: state.password}),
 				headers: { "Content-Type": "application/json" }
