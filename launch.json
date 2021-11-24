@@ -1,0 +1,6 @@
+{
+  "container": "spring-launcher",
+  "network": "test",
+  "channelBuf": 100,
+  "readerBuf": 30
+}
