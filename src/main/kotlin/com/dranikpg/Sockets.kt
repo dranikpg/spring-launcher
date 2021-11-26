@@ -13,7 +13,7 @@ suspend inline fun <R> listen(crossinline builder: SelectBuilder<R>.() -> Unit) 
     while (true) select(builder)
 }
 
-fun Application.configureSockets() {
+fun Application.configureSockets(launchCfg: LaunchConfig) {
     install(WebSockets) {
         pingPeriod = Duration.ofSeconds(15)
         timeout = Duration.ofSeconds(15)
@@ -22,7 +22,20 @@ fun Application.configureSockets() {
     }
     routing {
         webSocket("/launch") {
-            val launcher = Launcher.createwCAS() ?: return@webSocket
+            val launcher = Launcher(launchCfg)
+
+            // authenticate
+            while (true) {
+                val token = (incoming.receive() as? Frame.Text)?.readText() ?: continue
+                if (LaunchTokens.verify(token)) {
+                    send("[launcher] Authenticated")
+                    break
+                } else {
+                    send("[launcher] Authentication failed")
+                    close()
+                }
+            }
+
             try {
                 if (!isActive) return@webSocket
                 listen<Unit> {

@@ -17,7 +17,7 @@ fun Application.configureRouting() {
         }
         authenticate("admin") {
             get("/api/status") {
-                if (Launcher.BUSY.get()) call.respond("busy")
+                if (Launcher.LOCK.isLocked) call.respond("busy")
                 else call.respond("ready")
             }
         }

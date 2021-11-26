@@ -7,11 +7,34 @@ import io.ktor.http.*
 import io.ktor.response.*
 import io.ktor.request.*
 import io.ktor.routing.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
+import kotlin.random.Random
+
+data class UserSession(val admin: Boolean = false) : Principal
+
+object LaunchTokens {
+    private val tokens = mutableSetOf<String>()
+    private val LOCK = Mutex()
+    private fun randomToken() : String {
+        // 40 122
+        return (1..32).map { Char(40 + Random.nextInt(82)) }
+            .joinToString("")
+    }
+    suspend fun generate(): String = LOCK.withLock {
+        var token = randomToken()
+        while (!tokens.add(token)) {
+            token = randomToken()
+        }
+        return token
+    }
+
+    suspend fun verify(token: String) : Boolean = LOCK.withLock { tokens.remove(token) }
+}
 
 fun Application.configureSecurity() {
     val adminPassword = "admin"
-    data class UserSession(val admin: Boolean = false) : Principal
     install(Sessions) {
         cookie<UserSession>("user", storage = SessionStorageMemory()) {}
     }
@@ -35,6 +58,17 @@ fun Application.configureSecurity() {
         }
         authenticate ("admin") {
             get("/api/user") { call.respond(Unit) }
+        }
+    }
+}
+
+
+fun Application.supportProtocolSwitching() {
+    routing {
+        authenticate ("admin") {
+            get("launch") {
+                call.respond(LaunchTokens.generate())
+            }
         }
     }
 }

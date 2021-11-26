@@ -12,6 +12,25 @@ repositories {
     mavenCentral()
 }
 
+// HELPER TASKS FOR BUILDING DEPS
+
+task buildDocker (type:Exec) {
+    commandLine 'docker', 'build', '-t', docker_image, 'docker'
+}
+
+task buildReact (type:Exec) {
+    workingDir 'client'
+    commandLine 'npm', 'install'
+    commandLine 'npm', 'run', 'build'
+}
+
+//
+
+task prepare {
+    dependsOn buildDocker
+    dependsOn buildReact
+}
+
 dependencies {
     implementation "io.ktor:ktor-server-core:$ktor_version"
     implementation "io.ktor:ktor-server-sessions:$ktor_version"
@@ -20,7 +39,9 @@ dependencies {
     implementation "io.ktor:ktor-serialization:$ktor_version"
     implementation "io.ktor:ktor-websockets:$ktor_version"
     implementation "io.ktor:ktor-server-netty:$ktor_version"
+
     implementation "ch.qos.logback:logback-classic:$logback_version"
+
     testImplementation "io.ktor:ktor-server-tests:$ktor_version"
     testImplementation "org.jetbrains.kotlin:kotlin-test-junit:$kotlin_version"
 }

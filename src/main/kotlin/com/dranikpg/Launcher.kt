@@ -2,16 +2,14 @@ package com.dranikpg
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.decodeFromStream
 import java.io.BufferedReader
-import java.io.File
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.lang.Exception
-import java.util.concurrent.atomic.AtomicBoolean
 
 const val LOG_NEEDLE = "database system is ready to accept connections"
 
@@ -19,23 +17,10 @@ const val LOG_NEEDLE = "database system is ready to accept connections"
 data class RepoData(val repo: String, val folder: String, val branch: String)
 
 @Serializable
-data class LaunchConfig(val image: String, val network: String, val channelBuf: Int, val readerBuf: Int,
-    val postgresDB: String, val postgresLogin: String)
+data class LaunchConfig(val image: String, val network: String,
+                        val channelBuf: Int, val readerBuf: Int,
+                        val postgresDB: String, val postgresLogin: String)
 
-suspend inline fun echoStream(stream: InputStream, channel: Channel<String>, bufSize: Int) {
-    val reader = BufferedReader(InputStreamReader(stream), bufSize)
-    for (line in reader.lines()) {
-        channel.send(line)
-    }
-    reader.close()
-}
-
-fun runCommand(vararg cmd: String) {
-    ProcessBuilder(*cmd)
-        .inheritIO()
-        .start()
-        .waitFor()
-}
 
 fun parseRepoUrl(url: String) : RepoData? {
     val regex = ".*?github.com\\/(.*?)\\/tree\\/(.*?)\\/(.*)".toRegex()
@@ -45,35 +30,23 @@ fun parseRepoUrl(url: String) : RepoData? {
 }
 
 // Launcher instance
-class Launcher private constructor () {
-    companion object {
-        var CONFIG = LaunchConfig("spring-launcher", "lesson",
-            10, 50,
-            "lesson", "lesson")
-        val BUSY = AtomicBoolean(false)
-        fun createwCAS() : Launcher? {
-            if (BUSY.compareAndSet(false, true)) {
-                return Launcher()
-            }
-            return null
-        }
-        fun readConfig(f: File) {
-            CONFIG = Json.decodeFromStream(f.inputStream())
-        }
-    }
+class Launcher (val cfg: LaunchConfig) {
     // channel for sending log lines
-    val channel = Channel<String>(CONFIG.channelBuf)
+    val channel = Channel<String>(cfg.channelBuf)
 
-    suspend fun startBD() {
-        val process = ProcessBuilder("docker", "run",
-                "--env", "POSTGRES_USER=${CONFIG.postgresLogin}",
-                "--env", "POSTGRES_PASSWORD=${CONFIG.postgresLogin}",
-                "--env", "POSTGRES_DB=${CONFIG.postgresDB}",
-                "--name", "db",
-                "--net", CONFIG.network,
-                "library/postgres")
-            .redirectError(ProcessBuilder.Redirect.PIPE)
-            .start()
+    companion object {
+        val LOCK = Mutex()
+    }
+
+    // Start Postgres database in container
+    private suspend fun startBD() {
+        val process = Docker.launch("library/postgres") {
+            env("POSTGRES_USER", cfg.postgresLogin)
+            env("POSTGRES_PASSWORD", cfg.postgresLogin)
+            env("POSTGRES_DB", cfg.postgresDB)
+            network(cfg.network)
+            redirectOutput = true
+        }
 
         val reader = BufferedReader(InputStreamReader(process.errorStream), 40)
         for (line in reader.lines()) {
@@ -82,6 +55,15 @@ class Launcher private constructor () {
         }
         reader.close()
         throw Exception("Failed to start postgres")
+    }
+
+    // Echo stream to channel
+    private suspend fun echoStream(stream: InputStream) {
+        val reader = BufferedReader(InputStreamReader(stream))
+        for (line in reader.lines()) {
+            channel.send(line)
+        }
+        reader.close()
     }
 
     private suspend fun start(url: String) {
@@ -97,40 +79,42 @@ class Launcher private constructor () {
             startBD()
         }
 
-        channel.send("Started postgres")
-        channel.send("Running docker image")
+        channel.send("Started postgres. Running docker")
 
-        val process = ProcessBuilder("docker", "run",
-                "--env", "REPO_URL=${repo.repo}",
-                "--env", "FOLDER=${repo.folder}",
-                "--env", "BRANCH=${repo.branch}",
-				"--net", CONFIG.network,
-                "--name", "app",
-				"-p", "80:80",
-            	CONFIG.image)
-            .redirectOutput(ProcessBuilder.Redirect.PIPE)
-            .redirectError(ProcessBuilder.Redirect.PIPE)
-            .start()
+        val process = Docker.launch(cfg.image) {
+            env("REPO_URL", repo.repo)
+            env("FOLDER", repo.folder)
+            env("BRANCH", repo.branch)
+            network(cfg.network)
+            expose(80, 80)
+            redirectOutput = true
+        }
 
         coroutineScope {
-            val h1 = async(Dispatchers.IO) { echoStream(process.inputStream, channel, CONFIG.readerBuf) }
-            val h2 = async(Dispatchers.IO) { echoStream(process.errorStream, channel, CONFIG.readerBuf) }
+            val h1 = async(Dispatchers.IO) { echoStream(process.inputStream) }
+            val h2 = async(Dispatchers.IO) { echoStream(process.errorStream) }
             h1.await()
             h2.await()
         }
     }
 
     suspend fun message(msg: String) {
+        while (true) {
+            if (LOCK.tryLock()) {
+                break;
+            }
+            channel.send("Launcher busy... waiting")
+        }
         GlobalScope.launch(Dispatchers.IO) { start(msg) }
     }
 
     fun stop() {
         GlobalScope.launch (Dispatchers.IO) {
-            runCommand("docker", "kill", "app")
-            runCommand("docker", "kill", "db")
-            runCommand("docker", "rm", "app")
-            runCommand("docker", "rm", "db")
-            BUSY.set(false)
+            Docker.kill("app")
+            Docker.kill("db")
+            Docker.rm("app")
+            Docker.rm("db")
+            LOCK.unlock()
         }
     }
 }

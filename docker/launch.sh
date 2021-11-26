@@ -22,7 +22,7 @@ update_status() {
 fetch_git_repo() {
     rm -rf repo
     git clone https://github.com/$1 repo
-    (cd repo && git checkout $2)
+    (cd repo && git checkout $2 --)
 }
 
 # Remove old properties
